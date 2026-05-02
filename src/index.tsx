@@ -2,7 +2,7 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection, TextInput, View } from 'enmity/components';
+import { FormRow, FormSection } from 'enmity/components';
 import { get, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
@@ -19,34 +19,61 @@ const setUrls = (d: Record<string, string>) => {
 
 const PluginSync: Plugin = {
     ...manifest,
-    onStart() {},
-    onStop() { Patcher.unpatchAll(); },
+
+    onStart() {
+        // fetch'i yakala — Enmity plugin yüklerken .js dosyasını fetch eder
+        const g = global as any;
+        const origFetch = g.fetch;
+        if (!origFetch) return;
+
+        g.__pluginSyncOrigFetch = origFetch;
+
+        g.fetch = function (url: any, opts?: any) {
+            const promise: Promise<any> = origFetch(url, opts);
+            const urlStr: string = typeof url === 'string' ? url : (url?.url ?? '');
+
+            if (urlStr.startsWith('http') && urlStr.endsWith('.js')) {
+                promise.then((response: any) => {
+                    if (!response?.ok) return;
+                    response.clone().text().then((text: string) => {
+                        // Enmity plugin'i mi? registerPlugin çağrısı var mı?
+                        if (text.includes('registerPlugin')) {
+                            const name = urlStr.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+                            if (name) {
+                                const stored = getUrls();
+                                if (!stored[name]) {
+                                    stored[name] = urlStr;
+                                    setUrls(stored);
+                                }
+                            }
+                        }
+                    }).catch(() => {});
+                }).catch(() => {});
+            }
+
+            return promise;
+        };
+    },
+
+    onStop() {
+        // fetch'i geri al
+        const g = global as any;
+        if (g.__pluginSyncOrigFetch) {
+            g.fetch = g.__pluginSyncOrigFetch;
+            delete g.__pluginSyncOrigFetch;
+        }
+        Patcher.unpatchAll();
+    },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
             const [status, setStatus] = React.useState('');
-            const [inputs, setInputs] = React.useState<Record<string, string>>({});
+            const [tick, setTick] = React.useState(0);
 
             const plugins = getPlugins() ?? [];
             const urls = getUrls();
-
-            // Her plugin için URL kaynağı: 1) manifest.url 2) kaydedilmiş URL
-            const getUrl = (p: any): string =>
-                p?.url ?? p?.manifest?.url ?? urls[p?.name] ?? '';
-
-            const missing = plugins.filter((p: any) => !getUrl(p));
-
-            const handleSaveUrls = () => {
-                const u = getUrls();
-                let saved = 0;
-                Object.entries(inputs).forEach(([name, url]) => {
-                    if (url.trim().startsWith('http')) { u[name] = url.trim(); saved++; }
-                });
-                setUrls(u);
-                setInputs({});
-                setStatus(`✓ ${saved} URL kaydedildi`);
-                Toasts.open({ content: `${saved} URL kaydedildi!` });
-            };
+            const getUrl = (p: any): string => p?.url ?? urls[p?.name] ?? '';
+            const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
 
             const handleSave = () => {
                 const data = JSON.stringify({
@@ -106,47 +133,21 @@ const PluginSync: Plugin = {
                 }
             };
 
-            const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
+            const handleRefresh = () => {
+                setTick(t => t + 1);
+                setStatus('Yenilendi');
+            };
 
             return React.createElement(React.Fragment, null,
                 React.createElement(FormSection, { title: 'PLUGİN SYNC' },
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
-                        subLabel: status || (missing.length > 0
-                            ? `${missing.length} plugin için URL gir (bir kez)`
-                            : '✓ Hazır — dosyaya kaydet'),
+                        subLabel: status || (withUrl < plugins.length
+                            ? `${plugins.length - withUrl} plugin URL'si yok — o plugini kaldırıp tekrar yükle`
+                            : '✓ Tüm URL\'ler kayıtlı'),
+                        onPress: handleRefresh,
                     })
                 ),
-                missing.length > 0 ? React.createElement(FormSection, { title: "URL'LERİ GİR (BİR KEZ)" },
-                    ...missing.map((p: any) =>
-                        React.createElement(View, {
-                            key: p.name,
-                            style: { paddingHorizontal: 16, paddingVertical: 4 },
-                        },
-                            React.createElement(TextInput, {
-                                value: inputs[p.name] ?? '',
-                                onChangeText: (v: string) =>
-                                    setInputs((prev: any) => ({ ...prev, [p.name]: v })),
-                                placeholder: `${p.name} yükleme URL'si`,
-                                placeholderTextColor: '#72767d',
-                                style: {
-                                    color: '#fff',
-                                    backgroundColor: '#2f3136',
-                                    borderRadius: 8,
-                                    padding: 10,
-                                    fontSize: 13,
-                                },
-                                autoCapitalize: 'none',
-                                autoCorrect: false,
-                            })
-                        )
-                    ),
-                    React.createElement(FormRow, {
-                        label: 'Kaydet',
-                        subLabel: "URL'leri kalıcı olarak kaydet",
-                        onPress: handleSaveUrls,
-                    })
-                ) : null,
                 React.createElement(FormSection, { title: 'YEDEK AL / GERİ YÜKLE' },
                     React.createElement(FormRow, {
                         label: '📤 Dosyaya Kaydet',
@@ -162,9 +163,9 @@ const PluginSync: Plugin = {
                 React.createElement(FormSection, { title: `YÜKLÜ PLUGİNLER (${plugins.length})` },
                     ...plugins.map((p: any) =>
                         React.createElement(FormRow, {
-                            key: p.name,
+                            key: `${p.name}-${tick}`,
                             label: p.name,
-                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ URL gir'}`,
+                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ Kaldırıp tekrar yükle'}`,
                         })
                     )
                 )
