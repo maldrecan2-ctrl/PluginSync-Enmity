@@ -68,7 +68,8 @@ const PluginSync: Plugin = {
                         plugins: plugins.map((p: any) => ({
                             name: p.name,
                             version: p.version,
-                            url: stored[p.name] || '',
+                            // Enmity'nin sakladığı URL'yi çeşitli alanlarda ara
+                            url: p.url ?? p.source ?? p.manifest?.url ?? p.sourceUrl ?? stored[p.name] ?? '',
                         })),
                     }, null, 2);
 
