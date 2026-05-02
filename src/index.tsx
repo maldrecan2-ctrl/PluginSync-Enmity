@@ -2,7 +2,7 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection } from 'enmity/components';
+import { FormRow, FormSection, TextInput, View } from 'enmity/components';
 import { get, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
@@ -19,129 +19,140 @@ const setUrls = (d: Record<string, string>) => {
 
 const PluginSync: Plugin = {
     ...manifest,
-
-    onStart() {
-        // Her plugin kurulumunda URL'yi otomatik kaydet
-        const ep = (window as any).enmity?.plugins;
-        if (!ep?.installPlugin) return;
-        const _orig = ep.installPlugin.bind(ep);
-        Object.defineProperty(ep, 'installPlugin', {
-            configurable: true,
-            value: (url: string, cb: any) => {
-                _orig(url, (res: any) => {
-                    try {
-                        if (res?.kind === 'success' || res === true) {
-                            const name = url.split('/').pop()?.replace(/\.js$/i, '') ?? '';
-                            if (name) { const u = getUrls(); u[name] = url; setUrls(u); }
-                        }
-                    } catch {}
-                    cb?.(res);
-                });
-            },
-        });
-    },
-
+    onStart() {},
     onStop() { Patcher.unpatchAll(); },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
             const [status, setStatus] = React.useState('');
+            const [inputs, setInputs] = React.useState<Record<string, string>>({});
 
             const plugins = getPlugins() ?? [];
             const urls = getUrls();
 
-            const buildJson = () => JSON.stringify({
-                version: 1,
-                savedAt: new Date().toISOString(),
-                plugins: plugins.map((p: any) => ({
-                    name: p.name,
-                    version: p.version,
-                    url: urls[p.name] ?? '',
-                })),
-            }, null, 2);
+            // Her plugin için URL kaynağı: 1) manifest.url 2) kaydedilmiş URL
+            const getUrl = (p: any): string =>
+                p?.url ?? p?.manifest?.url ?? urls[p?.name] ?? '';
 
-            // Dosyaya kaydet
+            const missing = plugins.filter((p: any) => !getUrl(p));
+
+            const handleSaveUrls = () => {
+                const u = getUrls();
+                let saved = 0;
+                Object.entries(inputs).forEach(([name, url]) => {
+                    if (url.trim().startsWith('http')) { u[name] = url.trim(); saved++; }
+                });
+                setUrls(u);
+                setInputs({});
+                setStatus(`✓ ${saved} URL kaydedildi`);
+                Toasts.open({ content: `${saved} URL kaydedildi!` });
+            };
+
             const handleSave = () => {
-                const data = buildJson();
-                const missing = plugins.filter((p: any) => !urls[p.name]).length;
-                const ShareModule = getByProps('share', 'sharedAction');
-                if (ShareModule?.share) {
-                    ShareModule.share({ message: data, title: 'PluginSync.json' })
-                        .then(() => {
-                            if (missing > 0) {
-                                setStatus(`⚠ ${missing} plugin'in URL'si yok — kaldırıp tekrar yükle`);
-                            } else {
-                                setStatus(`✓ ${plugins.length} plugin kaydedildi`);
-                            }
-                        })
-                        .catch(() => {
-                            Clipboard.setString(data);
-                            Toasts.open({ content: 'Panoya kopyalandı!' });
-                        });
+                const data = JSON.stringify({
+                    version: 1,
+                    savedAt: new Date().toISOString(),
+                    plugins: plugins.map((p: any) => ({
+                        name: p.name,
+                        version: p.version,
+                        url: getUrl(p),
+                    })),
+                }, null, 2);
+
+                const Share = getByProps('share', 'sharedAction');
+                if (Share?.share) {
+                    Share.share({ message: data, title: 'PluginSync.json' })
+                        .then(() => setStatus(`✓ ${plugins.length} plugin kaydedildi`))
+                        .catch(() => { Clipboard.setString(data); Toasts.open({ content: 'Panoya kopyalandı!' }); });
                 } else {
                     Clipboard.setString(data);
                     Toasts.open({ content: 'Panoya kopyalandı!' });
                 }
             };
 
-            // Dosyadan yükle
+            const doImport = (text: string) => {
+                try {
+                    const data = JSON.parse(text);
+                    if (!Array.isArray(data?.plugins)) { Toasts.open({ content: 'Geçersiz format!' }); return; }
+                    const ep = (window as any).enmity?.plugins;
+                    const newUrls = getUrls();
+                    let queued = 0, skipped = 0;
+                    data.plugins.forEach((p: any) => {
+                        const url: string = typeof p === 'string' ? p : p?.url;
+                        const name: string = typeof p === 'object' ? (p?.name ?? '') : '';
+                        if (!url) { skipped++; return; }
+                        queued++;
+                        if (name) newUrls[name] = url;
+                        try { ep?.installPlugin?.(url, () => {}); } catch {}
+                    });
+                    setUrls(newUrls);
+                    setStatus(`${queued} plugin yükleniyor${skipped > 0 ? ` · ${skipped} atlandı` : ''}`);
+                    Toasts.open({ content: `${queued} plugin yükleniyor...` });
+                } catch { Toasts.open({ content: 'JSON okunamadı!' }); }
+            };
+
             const handleLoad = () => {
                 const DocPicker = getByProps('pickSingle', 'pick') ?? getByProps('pick', 'pickDirectory');
-                const pickFn = DocPicker?.pickSingle ?? (DocPicker?.pick
-                    ? (...a: any[]) => DocPicker.pick(...a).then((r: any[]) => r[0])
-                    : null);
-
+                const pickFn = DocPicker?.pickSingle
+                    ?? (DocPicker?.pick ? (...a: any[]) => DocPicker.pick(...a).then((r: any[]) => r[0]) : null);
                 if (pickFn) {
                     pickFn({ type: ['public.json', 'public.text', '*/*'] })
                         .then((r: any) => fetch(r?.uri ?? r?.fileCopyUri ?? ''))
                         .then((r: any) => r.text())
-                        .then((text: string) => processImport(text))
+                        .then(doImport)
                         .catch(() => Toasts.open({ content: 'Dosya okunamadı!' }));
                 } else {
-                    // Dosya seçici yok — panodan oku
-                    Clipboard.getString().then((text: string) => processImport(text));
+                    Clipboard.getString().then(doImport);
                 }
             };
 
-            const processImport = (text: string) => {
-                try {
-                    const data = JSON.parse(text);
-                    if (!Array.isArray(data?.plugins)) {
-                        Toasts.open({ content: 'Geçersiz format!' });
-                        return;
-                    }
-                    const ep = (window as any).enmity?.plugins;
-                    let queued = 0, skipped = 0;
-                    data.plugins.forEach((p: any) => {
-                        const url: string = typeof p === 'string' ? p : p?.url;
-                        if (!url) { skipped++; return; }
-                        queued++;
-                        try { ep?.installPlugin?.(url, () => {}); } catch {}
-                    });
-                    setStatus(`${queued} plugin yükleniyor${skipped > 0 ? ` · ${skipped} URL'siz atlandı` : ''}`);
-                    Toasts.open({ content: `${queued} plugin yükleniyor...` });
-                } catch {
-                    Toasts.open({ content: 'JSON okunamadı!' });
-                }
-            };
-
-            const withUrl = plugins.filter((p: any) => urls[p.name]).length;
+            const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
 
             return React.createElement(React.Fragment, null,
                 React.createElement(FormSection, { title: 'PLUGİN SYNC' },
                     React.createElement(FormRow, {
-                        label: `${plugins.length} Plugin · ${withUrl} URL Kayıtlı`,
-                        subLabel: status || 'Pluginleri kaydet veya yükle',
+                        label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
+                        subLabel: status || (missing.length > 0
+                            ? `${missing.length} plugin için URL gir (bir kez)`
+                            : '✓ Hazır — dosyaya kaydet'),
                     })
                 ),
-                React.createElement(FormSection, { title: 'YEDEK AL' },
+                missing.length > 0 ? React.createElement(FormSection, { title: "URL'LERİ GİR (BİR KEZ)" },
+                    ...missing.map((p: any) =>
+                        React.createElement(View, {
+                            key: p.name,
+                            style: { paddingHorizontal: 16, paddingVertical: 4 },
+                        },
+                            React.createElement(TextInput, {
+                                value: inputs[p.name] ?? '',
+                                onChangeText: (v: string) =>
+                                    setInputs((prev: any) => ({ ...prev, [p.name]: v })),
+                                placeholder: `${p.name} yükleme URL'si`,
+                                placeholderTextColor: '#72767d',
+                                style: {
+                                    color: '#fff',
+                                    backgroundColor: '#2f3136',
+                                    borderRadius: 8,
+                                    padding: 10,
+                                    fontSize: 13,
+                                },
+                                autoCapitalize: 'none',
+                                autoCorrect: false,
+                            })
+                        )
+                    ),
+                    React.createElement(FormRow, {
+                        label: 'Kaydet',
+                        subLabel: "URL'leri kalıcı olarak kaydet",
+                        onPress: handleSaveUrls,
+                    })
+                ) : null,
+                React.createElement(FormSection, { title: 'YEDEK AL / GERİ YÜKLE' },
                     React.createElement(FormRow, {
                         label: '📤 Dosyaya Kaydet',
                         subLabel: '"Dosyalara Kaydet" → PluginSync.json olarak sakla',
                         onPress: handleSave,
-                    })
-                ),
-                React.createElement(FormSection, { title: 'GERİ YÜKLE' },
+                    }),
                     React.createElement(FormRow, {
                         label: '📥 Dosyadan Yükle',
                         subLabel: 'Kaydettiğin JSON dosyasını seç → pluginler yüklenir',
@@ -153,7 +164,7 @@ const PluginSync: Plugin = {
                         React.createElement(FormRow, {
                             key: p.name,
                             label: p.name,
-                            subLabel: `v${p.version} · ${urls[p.name] ? '✓ URL kayıtlı' : '✗ URL yok — kaldırıp tekrar yükle'}`,
+                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ URL gir'}`,
                         })
                     )
                 )
