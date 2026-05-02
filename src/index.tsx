@@ -1,4 +1,4 @@
-import { Plugin, registerPlugin } from 'enmity/managers/plugins';
+import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
@@ -16,22 +16,14 @@ const PluginSync: Plugin = {
         const Panel = () => {
             const [lastAction, setLastAction] = React.useState('');
 
-            // getAllPlugins için tüm olası modülleri dene
+            // getPlugins SDK'dan direkt çalışır
             const getAllPlugins = (): any[] => {
-                try {
-                    return (
-                        getByProps('registerPlugin', 'getAllPlugins')?.getAllPlugins?.() ??
-                        getByProps('getAllPlugins')?.getAllPlugins?.() ??
-                        (window as any).enmity?.plugins?.getAllPlugins?.() ??
-                        []
-                    );
-                } catch { return []; }
+                try { return getPlugins() ?? []; }
+                catch { return []; }
             };
 
-            // installPlugin modülü
-            const getInstaller = () =>
-                getByProps('installPlugin') ??
-                (window as any).enmity?.plugins;
+            // installPlugin window.enmity.plugins üzerinden
+            const getInstaller = () => (window as any).enmity?.plugins;
 
             const saveUrl = (name: string, url: string) => {
                 try {
