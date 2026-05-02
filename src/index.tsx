@@ -2,50 +2,72 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection, TextInput, View } from 'enmity/components';
+import { FormRow, FormSection } from 'enmity/components';
+import { getString, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
 const Patcher = create('PluginSync');
+const PLUGIN_ID = 'PluginSync';
+
+const getStoredUrls = (): Record<string, string> => {
+    try { return JSON.parse(getString(PLUGIN_ID, 'urls', '{}') || '{}'); }
+    catch { return {}; }
+};
+
+const setStoredUrls = (data: Record<string, string>) => {
+    try { set(PLUGIN_ID, 'urls', JSON.stringify(data)); } catch {}
+};
 
 const PluginSync: Plugin = {
     ...manifest,
-    onStart() {},
-    onStop() { Patcher.unpatchAll(); },
 
-    getSettingsPanel({ settings }: { settings: any }) {
+    onStart() {
+        // installPlugin'i hook et — her plugin kurulumunda URL'yi otomatik kaydet
+        const enmityPlugins = (window as any).enmity?.plugins;
+        if (!enmityPlugins?.installPlugin) return;
+
+        const _orig = enmityPlugins.installPlugin.bind(enmityPlugins);
+        enmityPlugins.installPlugin = (url: string, callback: any) => {
+            // Kurulum öncesi mevcut plugin isimlerini kaydet
+            const before = new Set((enmityPlugins.getPlugins?.() ?? []).map((p: any) => p.name));
+
+            _orig(url, (result: any) => {
+                if (result?.kind === 'success') {
+                    try {
+                        // Yeni yüklenen plugin'i bul
+                        const after: any[] = enmityPlugins.getPlugins?.() ?? [];
+                        const newPlugin = after.find((p: any) => !before.has(p.name));
+                        const name = newPlugin?.name ?? url.split('/').pop()?.replace('.js', '');
+
+                        if (name) {
+                            const stored = getStoredUrls();
+                            stored[name] = url;
+                            setStoredUrls(stored);
+                        }
+                    } catch {}
+                }
+                callback?.(result);
+            });
+        };
+    },
+
+    onStop() {
+        Patcher.unpatchAll();
+        // installPlugin'i geri yükle — Enmity yeniden yükleyeceği için gerekmeyebilir
+    },
+
+    getSettingsPanel({ settings: _s }: { settings: any }) {
         const Panel = () => {
             const [lastAction, setLastAction] = React.useState('');
-            const [editMode, setEditMode] = React.useState(false);
-            const [urlInputs, setUrlInputs] = React.useState<Record<string, string>>({});
-
-            const getStoredUrls = (): Record<string, string> => {
-                try { return JSON.parse(settings.getString('urls', '{}') || '{}'); }
-                catch { return {}; }
-            };
-
-            const saveUrl = (name: string, url: string) => {
-                try {
-                    const stored = getStoredUrls();
-                    stored[name] = url;
-                    settings.set('urls', JSON.stringify(stored));
-                } catch {}
-            };
-
-            const getInstaller = () => (window as any).enmity?.plugins;
 
             const installList = (pluginArr: any[]) => {
-                const installer = getInstaller();
+                const installer = (window as any).enmity?.plugins;
                 let queued = 0;
                 pluginArr.forEach((p: any) => {
                     const url: string = typeof p === 'string' ? p : p?.url;
-                    const name: string = typeof p === 'object' ? (p?.name ?? '') : '';
                     if (!url) return;
                     queued++;
-                    try {
-                        installer?.installPlugin?.(url, (res: any) => {
-                            if ((res?.kind === 'success' || res === true) && name) saveUrl(name, url);
-                        });
-                    } catch {}
+                    try { installer?.installPlugin?.(url, () => {}); } catch {}
                 });
                 return queued;
             };
@@ -54,6 +76,8 @@ const PluginSync: Plugin = {
                 try {
                     const plugins = getPlugins() ?? [];
                     const stored = getStoredUrls();
+                    const missingUrls = plugins.filter((p: any) => !stored[p.name]).length;
+
                     const data = JSON.stringify({
                         version: 1,
                         exportedAt: new Date().toISOString(),
@@ -68,11 +92,12 @@ const PluginSync: Plugin = {
                     const ShareModule = getByProps('share', 'sharedAction');
                     if (ShareModule?.share) {
                         ShareModule.share({ message: data, title: 'PluginSync.json' })
-                            .then(() => setLastAction(`${plugins.length} plugin kaydedildi`))
-                            .catch(() => { Clipboard.setString(data); setLastAction('Panoya kopyalandı'); Toasts.open({ content: 'Panoya kopyalandı!' }); });
+                            .then(() => setLastAction(missingUrls > 0
+                                ? `⚠ ${missingUrls} plugin URL'si eksik — önce o pluginleri kaldır/tekrar yükle`
+                                : `✓ ${plugins.length} plugin kaydedildi`))
+                            .catch(() => { Clipboard.setString(data); Toasts.open({ content: 'Panoya kopyalandı!' }); });
                     } else {
                         Clipboard.setString(data);
-                        setLastAction('Panoya kopyalandı');
                         Toasts.open({ content: 'Panoya kopyalandı!' });
                     }
                 } catch { Toasts.open({ content: 'Dışa aktarma hatası!' }); }
@@ -106,17 +131,6 @@ const PluginSync: Plugin = {
                 }
             };
 
-            // URL kaydet tuşu
-            const handleSaveUrls = () => {
-                Object.entries(urlInputs).forEach(([name, url]) => {
-                    if (url.trim()) saveUrl(name, url.trim());
-                });
-                setEditMode(false);
-                setUrlInputs({});
-                Toasts.open({ content: 'URL\'ler kaydedildi!' });
-                setLastAction('URL\'ler kaydedildi');
-            };
-
             const plugins = getPlugins() ?? [];
             const stored = getStoredUrls();
 
@@ -124,7 +138,7 @@ const PluginSync: Plugin = {
                 React.createElement(FormSection, { title: 'ÖZET' },
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin Yüklü`,
-                        subLabel: lastAction || 'Pluginlerin URL\'lerini girdikten sonra yedek alın',
+                        subLabel: lastAction || 'Bundan sonra yüklenen pluginler otomatik kaydedilir',
                     })
                 ),
                 React.createElement(FormSection, { title: 'YEDEK AL' },
@@ -141,34 +155,14 @@ const PluginSync: Plugin = {
                         onPress: handleImport,
                     })
                 ),
-                // URL yönetimi — her plugin için URL gir
-                React.createElement(FormSection, { title: 'PLUGIN URL\'LERİ' },
-                    React.createElement(FormRow, {
-                        label: editMode ? 'Kaydet' : 'URL\'leri Düzenle',
-                        subLabel: editMode ? 'URL\'leri girdikten sonra kaydet' : 'Export\'ta URL\'lerin dolu çıkması için gir',
-                        onPress: editMode ? handleSaveUrls : () => setEditMode(true),
-                    }),
-                    ...plugins.map((p: any) => {
-                        const hasUrl = !!(stored[p.name]);
-                        if (!editMode) {
-                            return React.createElement(FormRow, {
-                                key: p.name,
-                                label: p.name,
-                                subLabel: stored[p.name] ? `✓ URL kayıtlı` : '✗ URL yok — Düzenle\'ye bas',
-                            });
-                        }
-                        return React.createElement(View, { key: p.name, style: { paddingHorizontal: 16, paddingVertical: 4 } },
-                            React.createElement(TextInput, {
-                                value: urlInputs[p.name] ?? stored[p.name] ?? '',
-                                onChangeText: (v: string) => setUrlInputs((prev: any) => ({ ...prev, [p.name]: v })),
-                                placeholder: `${p.name} URL'si`,
-                                placeholderTextColor: '#72767d',
-                                style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 4 },
-                                autoCapitalize: 'none',
-                                autoCorrect: false,
-                            })
-                        );
-                    })
+                React.createElement(FormSection, { title: `YÜKLÜ PLUGİNLER (${plugins.length})` },
+                    ...plugins.map((p: any) =>
+                        React.createElement(FormRow, {
+                            key: p.name,
+                            label: p.name,
+                            subLabel: stored[p.name] ? `✓ URL kayıtlı` : `✗ URL yok — kaldır ve tekrar yükle`,
+                        })
+                    )
                 )
             );
         };
