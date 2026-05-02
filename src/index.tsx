@@ -3,14 +3,14 @@ import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
 import { FormRow, FormSection } from 'enmity/components';
-import { getString, set } from 'enmity/api/settings';
+import { get, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
 const Patcher = create('PluginSync');
 const PLUGIN_ID = 'PluginSync';
 
 const getStoredUrls = (): Record<string, string> => {
-    try { return JSON.parse(getString(PLUGIN_ID, 'urls', '{}') || '{}'); }
+    try { return JSON.parse(get(PLUGIN_ID, 'urls', '{}') || '{}'); }
     catch { return {}; }
 };
 
