@@ -21,49 +21,55 @@ const PluginSync: Plugin = {
     ...manifest,
 
     onStart() {
-        // fetch'i yakala — Enmity plugin yüklerken .js dosyasını fetch eder
-        const g = global as any;
-        const origFetch = g.fetch;
-        if (!origFetch) return;
-
-        g.__pluginSyncOrigFetch = origFetch;
-
-        g.fetch = function (url: any, opts?: any) {
-            const promise: Promise<any> = origFetch(url, opts);
-            const urlStr: string = typeof url === 'string' ? url : (url?.url ?? '');
-
-            if (urlStr.startsWith('http') && urlStr.endsWith('.js')) {
-                promise.then((response: any) => {
-                    if (!response?.ok) return;
-                    response.clone().text().then((text: string) => {
-                        // Enmity plugin'i mi? registerPlugin çağrısı var mı?
-                        if (text.includes('registerPlugin')) {
-                            const name = urlStr.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+        // Yöntem 1: Alert.prompt — Enmity "Plugin URL gir" dialogunu yakala
+        const AlertModule = getByProps('prompt', 'alert') ?? getByProps('alert', 'dismiss');
+        if (AlertModule?.prompt) {
+            Patcher.before(AlertModule, 'prompt', (_self: any, args: any[]) => {
+                const origCallback = args[2];
+                args[2] = (inputUrl: string) => {
+                    if (typeof inputUrl === 'string' && inputUrl.startsWith('http')) {
+                        // 3 saniye sonra kontrol et — plugin kurulmuş olur
+                        setTimeout(() => {
+                            const name = inputUrl.split('/').pop()?.replace(/\.js$/i, '') ?? '';
                             if (name) {
                                 const stored = getUrls();
-                                if (!stored[name]) {
-                                    stored[name] = urlStr;
-                                    setUrls(stored);
-                                }
+                                stored[name] = inputUrl;
+                                setUrls(stored);
                             }
-                        }
-                    }).catch(() => {});
-                }).catch(() => {});
-            }
-
-            return promise;
-        };
-    },
-
-    onStop() {
-        // fetch'i geri al
-        const g = global as any;
-        if (g.__pluginSyncOrigFetch) {
-            g.fetch = g.__pluginSyncOrigFetch;
-            delete g.__pluginSyncOrigFetch;
+                        }, 3000);
+                    }
+                    if (typeof origCallback === 'function') origCallback(inputUrl);
+                };
+            });
         }
-        Patcher.unpatchAll();
+
+        // Yöntem 2: RCTNetworking — React Native'in network modülü
+        const Networking = getByProps('sendRequest', 'abortRequest');
+        if (Networking?.sendRequest) {
+            Patcher.before(Networking, 'sendRequest', (_self: any, args: any[]) => {
+                try {
+                    const query = args[0];
+                    const urlStr: string = query?.url ?? '';
+                    if (urlStr.startsWith('http') && urlStr.endsWith('.js')) {
+                        // Kaydı gecikmeli yap — response başarılıysa plugin adı eklenecek
+                        const name = urlStr.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+                        if (name) {
+                            setTimeout(() => {
+                                const plugins = getPlugins() ?? [];
+                                const found = plugins.find((p: any) => p.name === name);
+                                if (found) {
+                                    const stored = getUrls();
+                                    if (!stored[name]) { stored[name] = urlStr; setUrls(stored); }
+                                }
+                            }, 5000);
+                        }
+                    }
+                } catch {}
+            });
+        }
     },
+
+    onStop() { Patcher.unpatchAll(); },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
