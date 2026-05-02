@@ -111,7 +111,7 @@ const PluginSync: Plugin = {
                     .then((id: string) => {
                         if (id) { set(ID, 'gistId', id); setGistId(id); }
                         setStatus(`✓ Cloud'a kaydedildi · Gist: ${id}`);
-                        Toasts.open({ content: 'Cloud\\'a kaydedildi!' });
+                        Toasts.open({ content: "Cloud'a kaydedildi!" });
                         setBusy(false);
                     })
                     .catch(() => { Toasts.open({ content: 'Gist kaydetme hatası!' }); setBusy(false); });
@@ -225,9 +225,9 @@ const PluginSync: Plugin = {
                             autoCapitalize: 'none', autoCorrect: false,
                         })
                     ),
-                    React.createElement(FormRow, { label: 'Token ve ID\\'yi Kaydet', onPress: handleSaveSettings }),
-                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : '☁ Cloud\\'a Yedekle', onPress: busy ? undefined : handleCloudSave }),
-                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : '☁ Cloud\\'dan Geri Yükle', onPress: busy ? undefined : handleCloudLoad })
+                    React.createElement(FormRow, { label: "Token ve ID'yi Kaydet", onPress: handleSaveSettings }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "☁ Cloud'a Yedekle", onPress: busy ? undefined : handleCloudSave }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "☁ Cloud'dan Geri Yükle", onPress: busy ? undefined : handleCloudLoad })
                 ),
                 React.createElement(FormSection, { title: 'YEREL YEDEK (Dosya)' },
                     React.createElement(FormRow, {
