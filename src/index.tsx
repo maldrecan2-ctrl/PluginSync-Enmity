@@ -2,7 +2,7 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection } from 'enmity/components';
+import { FormRow, FormSection, TextInput, View } from 'enmity/components';
 import manifest from '../manifest.json';
 
 const Patcher = create('PluginSync');
@@ -15,52 +15,45 @@ const PluginSync: Plugin = {
     getSettingsPanel({ settings }: { settings: any }) {
         const Panel = () => {
             const [lastAction, setLastAction] = React.useState('');
+            const [editMode, setEditMode] = React.useState(false);
+            const [urlInputs, setUrlInputs] = React.useState<Record<string, string>>({});
 
-            // getPlugins SDK'dan direkt çalışır
-            const getAllPlugins = (): any[] => {
-                try { return getPlugins() ?? []; }
-                catch { return []; }
+            const getStoredUrls = (): Record<string, string> => {
+                try { return JSON.parse(settings.getString('urls', '{}') || '{}'); }
+                catch { return {}; }
             };
-
-            // installPlugin window.enmity.plugins üzerinden
-            const getInstaller = () => (window as any).enmity?.plugins;
 
             const saveUrl = (name: string, url: string) => {
                 try {
-                    const stored = JSON.parse(settings.getString('urls', '{}') || '{}');
+                    const stored = getStoredUrls();
                     stored[name] = url;
                     settings.set('urls', JSON.stringify(stored));
                 } catch {}
             };
 
-            const installList = (plugins: any[]) => {
+            const getInstaller = () => (window as any).enmity?.plugins;
+
+            const installList = (pluginArr: any[]) => {
                 const installer = getInstaller();
                 let queued = 0;
-                plugins.forEach((p: any) => {
+                pluginArr.forEach((p: any) => {
                     const url: string = typeof p === 'string' ? p : p?.url;
                     const name: string = typeof p === 'object' ? (p?.name ?? '') : '';
                     if (!url) return;
                     queued++;
                     try {
                         installer?.installPlugin?.(url, (res: any) => {
-                            if ((res?.kind === 'success' || res === true) && name) {
-                                saveUrl(name, url);
-                            }
+                            if ((res?.kind === 'success' || res === true) && name) saveUrl(name, url);
                         });
                     } catch {}
                 });
                 return queued;
             };
 
-            // DIŞA AKTAR — iOS Share sheet
             const handleExport = () => {
                 try {
-                    const plugins = getAllPlugins();
-                    const stored: Record<string, string> = (() => {
-                        try { return JSON.parse(settings.getString('urls', '{}') || '{}'); }
-                        catch { return {}; }
-                    })();
-
+                    const plugins = getPlugins() ?? [];
+                    const stored = getStoredUrls();
                     const data = JSON.stringify({
                         version: 1,
                         exportedAt: new Date().toISOString(),
@@ -68,8 +61,7 @@ const PluginSync: Plugin = {
                         plugins: plugins.map((p: any) => ({
                             name: p.name,
                             version: p.version,
-                            // Enmity'nin sakladığı URL'yi çeşitli alanlarda ara
-                            url: p.url ?? p.source ?? p.manifest?.url ?? p.sourceUrl ?? stored[p.name] ?? '',
+                            url: stored[p.name] ?? '',
                         })),
                     }, null, 2);
 
@@ -77,77 +69,62 @@ const PluginSync: Plugin = {
                     if (ShareModule?.share) {
                         ShareModule.share({ message: data, title: 'PluginSync.json' })
                             .then(() => setLastAction(`${plugins.length} plugin kaydedildi`))
-                            .catch(() => {
-                                Clipboard.setString(data);
-                                setLastAction('Panoya kopyalandı');
-                                Toasts.open({ content: 'Panoya kopyalandı!' });
-                            });
+                            .catch(() => { Clipboard.setString(data); setLastAction('Panoya kopyalandı'); Toasts.open({ content: 'Panoya kopyalandı!' }); });
                     } else {
                         Clipboard.setString(data);
                         setLastAction('Panoya kopyalandı');
                         Toasts.open({ content: 'Panoya kopyalandı!' });
                     }
-                } catch {
-                    Toasts.open({ content: 'Dışa aktarma hatası!' });
-                }
+                } catch { Toasts.open({ content: 'Dışa aktarma hatası!' }); }
             };
 
-            // İÇE AKTAR — iOS DocumentPicker ile dosya seç
             const handleImport = () => {
-                // DocumentPicker modülünü bul
-                const DocPicker =
-                    getByProps('pickSingle', 'pick') ??
-                    getByProps('pick', 'pickDirectory') ??
-                    getByProps('DocumentPicker');
-
+                const DocPicker = getByProps('pickSingle', 'pick') ?? getByProps('pick', 'pickDirectory');
                 if (DocPicker?.pick || DocPicker?.pickSingle) {
                     const pickFn = DocPicker.pickSingle ?? ((...args: any[]) => DocPicker.pick(...args).then((r: any[]) => r[0]));
                     pickFn({ type: ['public.json', 'public.text', '*/*'] })
-                        .then((result: any) => {
-                            const uri: string = result?.uri ?? result?.fileCopyUri ?? '';
-                            if (!uri) throw new Error('URI yok');
-                            return fetch(uri);
-                        })
+                        .then((result: any) => fetch(result?.uri ?? result?.fileCopyUri ?? ''))
                         .then((res: any) => res.text())
                         .then((text: string) => {
                             const data = JSON.parse(text);
-                            if (!Array.isArray(data?.plugins)) {
-                                Toasts.open({ content: 'Geçersiz format!' });
-                                return;
-                            }
+                            if (!Array.isArray(data?.plugins)) { Toasts.open({ content: 'Geçersiz format!' }); return; }
                             const count = installList(data.plugins);
                             setLastAction(`${count} plugin yükleniyor...`);
                             Toasts.open({ content: `${count} plugin yükleniyor...` });
                         })
-                        .catch((e: any) => {
-                            Toasts.open({ content: 'Dosya okunamadı!' });
-                        });
+                        .catch(() => Toasts.open({ content: 'Dosya okunamadı!' }));
                 } else {
-                    // DocumentPicker yoksa panodan oku
                     Clipboard.getString().then((text: string) => {
                         try {
                             const data = JSON.parse(text);
-                            if (!Array.isArray(data?.plugins)) {
-                                Toasts.open({ content: 'Geçersiz format!' });
-                                return;
-                            }
+                            if (!Array.isArray(data?.plugins)) { Toasts.open({ content: 'Geçersiz format!' }); return; }
                             const count = installList(data.plugins);
                             setLastAction(`${count} plugin yükleniyor...`);
                             Toasts.open({ content: `${count} plugin yükleniyor...` });
-                        } catch {
-                            Toasts.open({ content: 'Pano okunamadı!' });
-                        }
+                        } catch { Toasts.open({ content: 'Pano okunamadı!' }); }
                     });
                 }
             };
 
-            const plugins = getAllPlugins();
+            // URL kaydet tuşu
+            const handleSaveUrls = () => {
+                Object.entries(urlInputs).forEach(([name, url]) => {
+                    if (url.trim()) saveUrl(name, url.trim());
+                });
+                setEditMode(false);
+                setUrlInputs({});
+                Toasts.open({ content: 'URL\'ler kaydedildi!' });
+                setLastAction('URL\'ler kaydedildi');
+            };
+
+            const plugins = getPlugins() ?? [];
+            const stored = getStoredUrls();
 
             return React.createElement(React.Fragment, null,
                 React.createElement(FormSection, { title: 'ÖZET' },
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin Yüklü`,
-                        subLabel: lastAction || 'Yedek almak için aşağıdaki butona bas',
+                        subLabel: lastAction || 'Pluginlerin URL\'lerini girdikten sonra yedek alın',
                     })
                 ),
                 React.createElement(FormSection, { title: 'YEDEK AL' },
@@ -164,14 +141,34 @@ const PluginSync: Plugin = {
                         onPress: handleImport,
                     })
                 ),
-                React.createElement(FormSection, { title: `YÜKLÜ PLUGİNLER (${plugins.length})` },
-                    ...plugins.map((p: any) =>
-                        React.createElement(FormRow, {
-                            key: p.name,
-                            label: p.name,
-                            subLabel: `v${p.version}`,
-                        })
-                    )
+                // URL yönetimi — her plugin için URL gir
+                React.createElement(FormSection, { title: 'PLUGIN URL\'LERİ' },
+                    React.createElement(FormRow, {
+                        label: editMode ? 'Kaydet' : 'URL\'leri Düzenle',
+                        subLabel: editMode ? 'URL\'leri girdikten sonra kaydet' : 'Export\'ta URL\'lerin dolu çıkması için gir',
+                        onPress: editMode ? handleSaveUrls : () => setEditMode(true),
+                    }),
+                    ...plugins.map((p: any) => {
+                        const hasUrl = !!(stored[p.name]);
+                        if (!editMode) {
+                            return React.createElement(FormRow, {
+                                key: p.name,
+                                label: p.name,
+                                subLabel: stored[p.name] ? `✓ URL kayıtlı` : '✗ URL yok — Düzenle\'ye bas',
+                            });
+                        }
+                        return React.createElement(View, { key: p.name, style: { paddingHorizontal: 16, paddingVertical: 4 } },
+                            React.createElement(TextInput, {
+                                value: urlInputs[p.name] ?? stored[p.name] ?? '',
+                                onChangeText: (v: string) => setUrlInputs((prev: any) => ({ ...prev, [p.name]: v })),
+                                placeholder: `${p.name} URL'si`,
+                                placeholderTextColor: '#72767d',
+                                style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 4 },
+                                autoCapitalize: 'none',
+                                autoCorrect: false,
+                            })
+                        );
+                    })
                 )
             );
         };
