@@ -50,28 +50,14 @@ const gistLoad = (token: string, gistId: string): Promise<string> =>
 
 const PluginSync: Plugin = {
     ...manifest,
-    onStart() {
-        const ep = (window as any).enmity?.plugins;
-        if (ep?.installPlugin) {
-            Patcher.before(ep, 'installPlugin', (_self: any, args: any[]) => {
-                const url = args[0];
-                if (typeof url === 'string' && url.startsWith('http')) {
-                    const name = url.split('/').pop()?.replace(/\.js$/i, '') ?? '';
-                    if (name) {
-                        const u = s.urls();
-                        u[name] = url;
-                        s.setUrls(u);
-                    }
-                }
-            });
-        }
-    },
+    onStart() {},
     onStop() { Patcher.unpatchAll(); },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
             const [token, setToken] = React.useState(s.token());
             const [gistId, setGistId] = React.useState(s.gistId());
+            const [installUrl, setInstallUrl] = React.useState('');
             const [status, setStatus] = React.useState('');
             const [busy, setBusy] = React.useState(false);
 
@@ -79,6 +65,27 @@ const PluginSync: Plugin = {
             const urls = s.urls();
 
             const getUrl = (p: any): string => p?.url ?? p?.manifest?.url ?? urls[p?.name] ?? '';
+
+            const handleInstall = () => {
+                const url = installUrl.trim();
+                if (!url.startsWith('http')) { Toasts.open({ content: 'Geçerli bir URL gir!' }); return; }
+                const ep = (window as any).enmity?.plugins;
+                const name = url.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+                ep?.installPlugin?.(url, (res: any) => {
+                    if (res?.kind === 'success' || res === true) {
+                        if (name) {
+                            const u = s.urls();
+                            u[name] = url;
+                            s.setUrls(u);
+                        }
+                        setInstallUrl('');
+                        setStatus(`✓ ${name} kuruldu ve URL kaydedildi`);
+                        Toasts.open({ content: `${name || 'Plugin'} kuruldu ve kaydedildi!` });
+                    } else {
+                        Toasts.open({ content: 'Kurulum başarısız!' });
+                    }
+                });
+            };
 
             const buildData = () => JSON.stringify({
                 version: 1,
@@ -179,6 +186,23 @@ const PluginSync: Plugin = {
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
                         subLabel: status || '✓ Pluginleri yedekleyebilirsin',
+                    })
+                ),
+                React.createElement(FormSection, { title: 'YENİ PLUGİN KUR' },
+                    React.createElement(View, { style: { paddingHorizontal: 16, paddingTop: 8 } },
+                        React.createElement(TextInput, {
+                            value: installUrl,
+                            onChangeText: setInstallUrl,
+                            placeholder: 'Plugin URL\'sini buraya yapıştır',
+                            placeholderTextColor: '#72767d',
+                            style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 4 },
+                            autoCapitalize: 'none', autoCorrect: false,
+                        })
+                    ),
+                    React.createElement(FormRow, {
+                        label: 'Kur ve URL\'yi Kaydet',
+                        subLabel: 'URL kalıcı olarak kaydedilecek',
+                        onPress: handleInstall,
                     })
                 ),
                 React.createElement(FormSection, { title: 'CLOUD SYNC (GitHub Gist)' },
