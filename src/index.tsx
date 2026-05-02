@@ -2,7 +2,7 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection } from 'enmity/components';
+import { FormRow, FormSection, TextInput, View } from 'enmity/components';
 import { get, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
@@ -58,59 +58,92 @@ const PluginSync: Plugin = {
             const [lastAction, setLastAction] = React.useState('');
             const [scanning, setScanning] = React.useState(false);
 
-            // RNFS ile Enmity'nin plugin dosyalarını tara — URL'leri bul
+            const [bulkInput, setBulkInput] = React.useState('');
+            const [showBulk, setShowBulk] = React.useState(false);
+
+            // AsyncStorage veya plugin objesinden URL bul
             const handleScan = () => {
                 setScanning(true);
                 try {
-                    const RNFS = getByProps('readFile', 'readDir', 'DocumentDirectoryPath');
-                    if (!RNFS?.readDir || !RNFS?.DocumentDirectoryPath) {
-                        Toasts.open({ content: 'Dosya sistemi erişimi yok!' });
-                        setScanning(false);
-                        return;
-                    }
+                    // Plugin objesinde gizli URL field'ı var mı kontrol et
+                    const plugins = getPlugins() ?? [];
+                    const stored = getStoredUrls();
+                    let found = 0;
+                    plugins.forEach((p: any) => {
+                        const url = p?.url ?? p?.source ?? p?.sourceUrl ?? p?.manifest?.url ?? p?._url ?? p?.pluginUrl;
+                        if (url && !stored[p.name]) {
+                            stored[p.name] = url;
+                            found++;
+                        }
+                    });
 
-                    const pluginDir = `${RNFS.DocumentDirectoryPath}/Enmity/plugins`;
-
-                    RNFS.readDir(pluginDir)
-                        .then((files: any[]) => {
-                            const jsonFiles = files.filter((f: any) => f.name?.endsWith('.json'));
-                            const promises = jsonFiles.map((f: any) =>
-                                RNFS.readFile(f.path, 'utf8')
-                                    .then((content: string) => {
-                                        try {
-                                            const data = JSON.parse(content);
-                                            const name: string = data?.name ?? '';
-                                            const url: string = data?.url ?? data?.source ?? data?.sourceUrl ?? '';
-                                            if (name && url) return { name, url };
-                                        } catch {}
-                                        return null;
-                                    })
-                                    .catch(() => null)
+                    // AsyncStorage'dan Enmity plugin verisi ara
+                    const AsyncStorage = getByProps('getItem', 'setItem', 'getAllKeys');
+                    if (AsyncStorage?.getAllKeys) {
+                        AsyncStorage.getAllKeys().then((keys: string[]) => {
+                            const enmityKeys = keys.filter((k: string) =>
+                                k?.toLowerCase?.().includes('plugin') ||
+                                k?.toLowerCase?.().includes('enmity')
                             );
-
-                            Promise.all(promises).then((results: any[]) => {
-                                const stored = getStoredUrls();
-                                let found = 0;
-                                results.forEach((r: any) => {
-                                    if (r?.name && r?.url) {
-                                        stored[r.name] = r.url;
-                                        found++;
-                                    }
-                                });
-                                setStoredUrls(stored);
-                                setLastAction(`${found} URL bulundu`);
-                                Toasts.open({ content: `${found} plugin URL'si otomatik bulundu!` });
+                            const reads = enmityKeys.map((k: string) =>
+                                AsyncStorage.getItem(k).then((val: string | null) => {
+                                    try {
+                                        const data = JSON.parse(val ?? '{}');
+                                        if (data?.url && data?.name) return { name: data.name, url: data.url };
+                                        if (typeof data === 'object') {
+                                            // URL pattern içeren string değerleri bul
+                                            for (const [key, value] of Object.entries(data)) {
+                                                if (typeof value === 'string' && value.startsWith('http')) {
+                                                    return { name: key, url: value as string };
+                                                }
+                                            }
+                                        }
+                                    } catch {}
+                                    return null;
+                                }).catch(() => null)
+                            );
+                            Promise.all(reads).then((results: any[]) => {
+                                const fresh = getStoredUrls();
+                                results.forEach((r: any) => { if (r?.name && r?.url) { fresh[r.name] = r.url; found++; } });
+                                setStoredUrls(fresh);
+                                setLastAction(found > 0 ? `${found} URL bulundu` : 'URL bulunamadı — aşağıdan gir');
+                                if (found === 0) setShowBulk(true);
+                                Toasts.open({ content: found > 0 ? `${found} URL bulundu!` : 'URL bulunamadı, manuel gir' });
                                 setScanning(false);
                             });
-                        })
-                        .catch(() => {
-                            Toasts.open({ content: 'Plugin dizini okunamadı!' });
-                            setScanning(false);
-                        });
-                } catch {
-                    Toasts.open({ content: 'Tarama hatası!' });
-                    setScanning(false);
-                }
+                        }).catch(() => { setScanning(false); setShowBulk(true); });
+                    } else {
+                        if (found > 0) setStoredUrls(stored);
+                        setLastAction(found > 0 ? `${found} URL bulundu` : 'URL bulunamadı — manuel gir');
+                        if (found === 0) setShowBulk(true);
+                        Toasts.open({ content: found > 0 ? `${found} URL bulundu!` : 'Manuel giriş gerekiyor' });
+                        setScanning(false);
+                    }
+                } catch { setScanning(false); setShowBulk(true); }
+            };
+
+            // Toplu URL kaydet: "PluginAdı=https://..." formatında
+            const handleBulkSave = () => {
+                const lines = bulkInput.split('\n').map((l: string) => l.trim()).filter(Boolean);
+                const stored = getStoredUrls();
+                let saved = 0;
+                lines.forEach((line: string) => {
+                    const eq = line.indexOf('=');
+                    if (eq > 0) {
+                        const name = line.slice(0, eq).trim();
+                        const url = line.slice(eq + 1).trim();
+                        if (name && url.startsWith('http')) { stored[name] = url; saved++; }
+                    } else if (line.startsWith('http')) {
+                        // Sadece URL — dosya adından isim tahmin et
+                        const name = line.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+                        if (name) { stored[name] = line; saved++; }
+                    }
+                });
+                setStoredUrls(stored);
+                setBulkInput('');
+                setShowBulk(false);
+                setLastAction(`${saved} URL kaydedildi`);
+                Toasts.open({ content: `${saved} URL kaydedildi!` });
             };
 
             const installList = (pluginArr: any[]) => {
@@ -194,9 +227,27 @@ const PluginSync: Plugin = {
                 React.createElement(FormSection, { title: 'YEDEK AL' },
                     React.createElement(FormRow, {
                         label: 'URL\'leri Otomatik Tara',
-                        subLabel: 'Enmity dosyalarından URL\'leri otomatik bulur',
+                        subLabel: scanning ? 'Taranıyor...' : 'Plugin objelerinde ve storage\'da URL ara',
                         onPress: handleScan,
                     }),
+                    showBulk ? React.createElement(View, { style: { paddingHorizontal: 16, paddingVertical: 8 } },
+                        React.createElement(TextInput, {
+                            value: bulkInput,
+                            onChangeText: setBulkInput,
+                            placeholder: 'SecretMessage=https://raw...\nPlatformIndicators=https://raw...',
+                            placeholderTextColor: '#72767d',
+                            multiline: true,
+                            numberOfLines: 4,
+                            style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 12, minHeight: 80, marginBottom: 4 },
+                            autoCapitalize: 'none',
+                            autoCorrect: false,
+                        }),
+                        React.createElement(FormRow, {
+                            label: 'Kaydet',
+                            subLabel: 'Her satır: PluginAdı=URL veya sadece URL',
+                            onPress: handleBulkSave,
+                        })
+                    ) : null,
                     React.createElement(FormRow, {
                         label: 'Dosyaya Kaydet',
                         subLabel: 'Paylaşım menüsü → "Dosyalara Kaydet"',
