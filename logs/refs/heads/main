@@ -1,0 +1,27 @@
+0000000000000000000000000000000000000000 2977937eaf53ffdb51a17f71dd7715d0b0c1df81 maldrecan2-ctrl <maldrecan2@gmail.com> 1777662197 +0300	commit (initial): İlk sürüm: SecretMessage eklentisi yüklendi
+2977937eaf53ffdb51a17f71dd7715d0b0c1df81 2977937eaf53ffdb51a17f71dd7715d0b0c1df81 maldrecan2-ctrl <maldrecan2@gmail.com> 1777662247 +0300	Branch: renamed refs/heads/master to refs/heads/main
+2977937eaf53ffdb51a17f71dd7715d0b0c1df81 746ec65f2d36f2b8e5303c8734bafadf054e489f maldrecan2-ctrl <maldrecan2@gmail.com> 1777662384 +0300	commit: Eksik dist klasörü eklendi
+746ec65f2d36f2b8e5303c8734bafadf054e489f c4531ef930e48753dbd2aff48283fbba2bac04e4 maldrecan2-ctrl <maldrecan2@gmail.com> 1777662656 +0300	commit: Fix react-native import causing crash
+c4531ef930e48753dbd2aff48283fbba2bac04e4 efa04538a4ecdd7617eeb384f164ee8635cbc2f6 maldrecan2-ctrl <maldrecan2@gmail.com> 1777662968 +0300	commit: Fix settings toggle crash
+efa04538a4ecdd7617eeb384f164ee8635cbc2f6 cd872f24ffbeab81b59191176a0f4886d0d9dc24 maldrecan2-ctrl <maldrecan2@gmail.com> 1777663122 +0300	commit: Translate settings to Turkish
+cd872f24ffbeab81b59191176a0f4886d0d9dc24 07cd795608cd3b76ca565045eea7e37938f41273 maldrecan2-ctrl <maldrecan2@gmail.com> 1777663931 +0300	commit: Update to Vencord secret language logic
+07cd795608cd3b76ca565045eea7e37938f41273 a0609f7cb2225a146364fb176bcace3c9ff951b7 maldrecan2-ctrl <maldrecan2@gmail.com> 1777664374 +0300	commit: Encrypt only if message starts with asterisk
+a0609f7cb2225a146364fb176bcace3c9ff951b7 f77a40ed088e486a222c785636c91db8b13b8b8b maldrecan2-ctrl <maldrecan2@gmail.com> 1777664641 +0300	commit: Fix message decryption and Dispatcher patch
+f77a40ed088e486a222c785636c91db8b13b8b8b 1c16691ab3c44d14c1f123f531775f520e37d3d0 maldrecan2-ctrl <maldrecan2@gmail.com> 1777664833 +0300	commit: Change to Slash and Context Menu Commands
+1c16691ab3c44d14c1f123f531775f520e37d3d0 9e8203a197055911c1cf398e60e975085e6f7ee2 maldrecan2-ctrl <maldrecan2@gmail.com> 1777664954 +0300	commit: Restore asterisk prefix for sending messages
+9e8203a197055911c1cf398e60e975085e6f7ee2 0165f9054fc43005b10d6e477540692a15f771c5 maldrecan2-ctrl <maldrecan2@gmail.com> 1777665177 +0300	commit: Patch MessageActionSheet to add translate button directly
+0165f9054fc43005b10d6e477540692a15f771c5 8a23ee0806950093376747f7796bec22399c8d52 maldrecan2-ctrl <maldrecan2@gmail.com> 1777665387 +0300	commit: Bump version to 1.0.5 for cache bypass
+8a23ee0806950093376747f7796bec22399c8d52 fac55d15902fb0184d13579a5be43c7a7a9e08e7 maldrecan2-ctrl <maldrecan2@gmail.com> 1777665549 +0300	commit: Update author and version to 1.0.6
+fac55d15902fb0184d13579a5be43c7a7a9e08e7 09b5bf816e81b62fe460280c0bce7e40946e37f9 maldrecan2-ctrl <maldrecan2@gmail.com> 1777665794 +0300	commit: Restore auto translate with settings toggle
+09b5bf816e81b62fe460280c0bce7e40946e37f9 c1a5e470c2bc4a7bc433fe7ef422a79a1229f813 maldrecan2-ctrl <maldrecan2@gmail.com> 1777665925 +0300	commit: Append decrypted text below original message
+c1a5e470c2bc4a7bc433fe7ef422a79a1229f813 50cbfdbfa87f519bedded1014b8e0a4366d046bd maldrecan2-ctrl <maldrecan2@gmail.com> 1777666061 +0300	commit: Format decrypted message to match Vencord style
+50cbfdbfa87f519bedded1014b8e0a4366d046bd 5ee856e19643aa881c7e6d51ef1008a17127e61a maldrecan2-ctrl <maldrecan2@gmail.com> 1777666310 +0300	commit: Adjust spacing and format decrypted text in a code block
+5ee856e19643aa881c7e6d51ef1008a17127e61a 6adfee9359b7cea2a9b2ee83b92f8eaa7f24a71d maldrecan2-ctrl <maldrecan2@gmail.com> 1777666497 +0300	commit: Remove markdown and spaces for decrypted text
+6adfee9359b7cea2a9b2ee83b92f8eaa7f24a71d 01b1b86fb677dc9b0f77b010345fe22b8e232770 maldrecan2-ctrl <maldrecan2@gmail.com> 1777666799 +0300	commit: Use bold for translation and italic for footer
+01b1b86fb677dc9b0f77b010345fe22b8e232770 88daa726d49b27ff004c54eb64f843ad26f734c7 maldrecan2-ctrl <maldrecan2@gmail.com> 1777666929 +0300	commit: Format exactly as requested in second screenshot
+88daa726d49b27ff004c54eb64f843ad26f734c7 b4e9fa7ae4901d62ca9d5500daad1b7b45c0160d maldrecan2-ctrl <maldrecan2@gmail.com> 1777667031 +0300	commit: Format translation in quotes and italics without footer
+b4e9fa7ae4901d62ca9d5500daad1b7b45c0160d 74cc9faf04393f5406f81634af7e4d21809a9de5 maldrecan2-ctrl <maldrecan2@gmail.com> 1777667356 +0300	commit: Format translation in parentheses and update author in package.json
+74cc9faf04393f5406f81634af7e4d21809a9de5 ee528e59cf3f171f2898edb23a8a852f2c8cba5c maldrecan2-ctrl <maldrecan2@gmail.com> 1777667495 +0300	commit: Change plugin color to purple and use subtext formatting for translation
+ee528e59cf3f171f2898edb23a8a852f2c8cba5c 9ed4384a6ae3adadbc84e42d7a79031d4cc0ae2c maldrecan2-ctrl <maldrecan2@gmail.com> 1777667653 +0300	commit: Bump version to 1.0.7 to break cache and enforce purple color
+9ed4384a6ae3adadbc84e42d7a79031d4cc0ae2c a3f4762e8b6dda338e891ab1ad279654f45f47af maldrecan2-ctrl <maldrecan2@gmail.com> 1777667723 +0300	commit: Bump version to 1.0.7
+a3f4762e8b6dda338e891ab1ad279654f45f47af 7906f8d5a98399acf6bddcdb6b8e97998b47d521 maldrecan2-ctrl <maldrecan2@gmail.com> 1777667859 +0300	commit: v1.0.8: red color, parentheses, no blank line in translation

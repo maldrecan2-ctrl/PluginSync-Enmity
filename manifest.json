@@ -1,0 +1,12 @@
+{
+   "name": "PluginSync",
+   "version": "1.0.0",
+   "description": "Export and import all your Enmity plugins as a backup file.",
+   "authors": [
+      {
+         "name": "rolex7exe",
+         "id": "460344197849808897"
+      }
+   ],
+   "color": "#5865f2"
+}
