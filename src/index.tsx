@@ -55,6 +55,7 @@ const PluginSync: Plugin = {
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
+            const { ScrollView } = getByProps('ScrollView') ?? { ScrollView: View };
             const [token, setToken] = React.useState(s.token());
             const [gistId, setGistId] = React.useState(s.gistId());
             const [installUrl, setInstallUrl] = React.useState('');
@@ -110,11 +111,11 @@ const PluginSync: Plugin = {
                 gistSave(t, gistId.trim(), buildData())
                     .then((id: string) => {
                         if (id) { set(ID, 'gistId', id); setGistId(id); }
-                        setStatus(`✓ Cloud'a kaydedildi · Gist: ${id}`);
-                        Toasts.open({ content: "Cloud'a kaydedildi!" });
+                        setStatus(`Kaydedildi · Gist: ${id}`);
+                        Toasts.open({ content: "Buluta kaydedildi!" });
                         setBusy(false);
                     })
-                    .catch(() => { Toasts.open({ content: 'Gist kaydetme hatası!' }); setBusy(false); });
+                    .catch(() => { Toasts.open({ content: 'Bulut kaydetme hatası!' }); setBusy(false); });
             };
 
             const doImport = (text: string) => {
@@ -156,7 +157,7 @@ const PluginSync: Plugin = {
                 const Share = getByProps('share', 'sharedAction');
                 if (Share?.share) {
                     Share.share({ message: data, title: 'PluginSync.json' })
-                        .then(() => setStatus(`✓ ${plugins.length} plugin dosyaya kaydedildi`))
+                        .then(() => setStatus(`Cihaza kaydedildi (${plugins.length} plugin)`))
                         .catch(() => { Clipboard.setString(data); Toasts.open({ content: 'Panoya kopyalandı!' }); });
                 } else {
                     Clipboard.setString(data);
@@ -181,11 +182,11 @@ const PluginSync: Plugin = {
 
             const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
 
-            return React.createElement(React.Fragment, null,
-                React.createElement(FormSection, { title: 'PLUGİN SYNC' },
+            return React.createElement(ScrollView, { style: { flex: 1, marginBottom: 20 } },
+                React.createElement(FormSection, { title: 'GENEL DURUM' },
                     React.createElement(FormRow, {
-                        label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
-                        subLabel: status || '✓ Pluginleri yedekleyebilirsin',
+                        label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} Kayıtlı`,
+                        subLabel: status || 'Sistem hazır',
                     })
                 ),
                 React.createElement(FormSection, { title: 'YENİ PLUGİN KUR' },
@@ -200,12 +201,12 @@ const PluginSync: Plugin = {
                         })
                     ),
                     React.createElement(FormRow, {
-                        label: 'Kur ve URL\'yi Kaydet',
-                        subLabel: 'URL kalıcı olarak kaydedilecek',
+                        label: 'Kur ve Kaydet',
+                        subLabel: 'URL kalıcı olarak eklenecek',
                         onPress: handleInstall,
                     })
                 ),
-                React.createElement(FormSection, { title: 'CLOUD SYNC (GitHub Gist)' },
+                React.createElement(FormSection, { title: 'BULUT YEDEKLEME (GITHUB)' },
                     React.createElement(View, { style: { paddingHorizontal: 16, paddingTop: 8 } },
                         React.createElement(TextInput, {
                             value: token,
@@ -219,23 +220,25 @@ const PluginSync: Plugin = {
                         React.createElement(TextInput, {
                             value: gistId,
                             onChangeText: setGistId,
-                            placeholder: 'Gist ID (ilk kayıtta otomatik oluşturulur)',
+                            placeholder: 'Gist ID (ilk yedeklemede otomatik dolar)',
                             placeholderTextColor: '#72767d',
                             style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 4 },
                             autoCapitalize: 'none', autoCorrect: false,
                         })
                     ),
-                    React.createElement(FormRow, { label: "Token ve ID'yi Kaydet", onPress: handleSaveSettings }),
-                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "☁ Cloud'a Yedekle", onPress: busy ? undefined : handleCloudSave }),
-                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "☁ Cloud'dan Geri Yükle", onPress: busy ? undefined : handleCloudLoad })
+                    React.createElement(FormRow, { label: "Bağlantı Ayarlarını Kaydet", onPress: handleSaveSettings }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "Buluta Yedekle", onPress: busy ? undefined : handleCloudSave }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : "Buluttan Geri Yükle", onPress: busy ? undefined : handleCloudLoad })
                 ),
-                React.createElement(FormSection, { title: 'YEREL YEDEK (Dosya)' },
+                React.createElement(FormSection, { title: 'CİHAZ İÇİ YEDEKLEME' },
                     React.createElement(FormRow, {
-                        label: '📤 Dosyaya Kaydet',
+                        label: 'Dosyaya Kaydet',
+                        subLabel: 'JSON dosyası olarak dışa aktar',
                         onPress: handleLocalSave,
                     }),
                     React.createElement(FormRow, {
-                        label: '📥 Dosyadan Yükle',
+                        label: 'Dosyadan Yükle',
+                        subLabel: 'Cihazdaki JSON dosyasından içe aktar',
                         onPress: handleLocalLoad,
                     })
                 ),
@@ -244,7 +247,7 @@ const PluginSync: Plugin = {
                         React.createElement(FormRow, {
                             key: p.name,
                             label: p.name,
-                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ URL eksik'}`,
+                            subLabel: `v${p.version} · ${getUrl(p) ? 'Kayıtlı' : 'URL Eksik'}`,
                         })
                     )
                 )
