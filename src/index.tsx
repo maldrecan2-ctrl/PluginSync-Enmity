@@ -17,14 +17,14 @@ const PluginSync: Plugin = {
     },
 
     getSettingsPanel({ settings }: { settings: any }) {
-        const PluginManager = getByProps('getAllPlugins', 'getPlugin');
+        const enmityPlugins = (window as any).enmity?.plugins;
 
         const Panel = () => {
             const [status, setStatus] = React.useState('');
 
             const handleExport = () => {
                 try {
-                    const plugins = PluginManager?.getAllPlugins?.() ?? [];
+                    const plugins = enmityPlugins?.getAllPlugins?.() ?? [];
                     const stored: Record<string, string> = JSON.parse(
                         settings.getString('urls', '{}') || '{}'
                     );
@@ -52,7 +52,7 @@ const PluginSync: Plugin = {
                             Toasts.open({ content: 'Geçersiz format!' });
                             return;
                         }
-                        const InstallManager = getByProps('installPlugin');
+                        const InstallManager = (window as any).enmity?.plugins;
                         let queued = 0;
                         data.plugins.forEach((p: any) => {
                             const url: string = typeof p === 'string' ? p : p?.url;
@@ -79,7 +79,7 @@ const PluginSync: Plugin = {
                 });
             };
 
-            const plugins: any[] = PluginManager?.getAllPlugins?.() ?? [];
+            const plugins: any[] = enmityPlugins?.getAllPlugins?.() ?? [];
 
             return React.createElement(React.Fragment, null,
                 React.createElement(FormSection, { title: 'DIŞA AKTAR' },
