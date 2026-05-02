@@ -1,6 +1,6 @@
 {
-   "name": "PluginSync",
-   "version": "1.0.0",
+   "name": "PluginSyncV6",
+   "version": "6.0.0",
    "description": "Export and import all your Enmity plugins as a backup file.",
    "authors": [
       {
@@ -9,5 +9,5 @@
       }
    ],
    "color": "#5865f2",
-   "url": "https://raw.githubusercontent.com/maldrecan2-ctrl/PluginSync-Enmity/main/dist/PluginSync.js"
+   "url": "https://raw.githubusercontent.com/maldrecan2-ctrl/PluginSync-Enmity/main/dist/PluginSyncV6.js"
 }
