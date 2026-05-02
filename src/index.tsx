@@ -2,105 +2,111 @@ import { Plugin, registerPlugin, getPlugins } from 'enmity/managers/plugins';
 import { getByProps } from 'enmity/metro';
 import { React, Toasts, Clipboard } from 'enmity/metro/common';
 import { create } from 'enmity/patcher';
-import { FormRow, FormSection } from 'enmity/components';
+import { FormRow, FormSection, TextInput, View } from 'enmity/components';
 import { get, set } from 'enmity/api/settings';
 import manifest from '../manifest.json';
 
 const Patcher = create('PluginSync');
 const ID = 'PluginSync';
 
-const getUrls = (): Record<string, string> => {
-    try { return JSON.parse(get(ID, 'urls', '{}') || '{}'); }
-    catch { return {}; }
+const s = {
+    urls: (): Record<string, string> => { try { return JSON.parse(get(ID, 'urls', '{}') || '{}'); } catch { return {}; } },
+    setUrls: (d: Record<string, string>) => { try { set(ID, 'urls', JSON.stringify(d)); } catch {} },
+    token: (): string => get(ID, 'ghToken', '') as string,
+    gistId: (): string => get(ID, 'gistId', '') as string,
 };
-const setUrls = (d: Record<string, string>) => {
-    try { set(ID, 'urls', JSON.stringify(d)); } catch {}
+
+// GitHub Gist API
+const GIST_FILENAME = 'pluginsync.json';
+const gistHeaders = (token: string) => ({
+    'Authorization': `token ${token}`,
+    'Content-Type': 'application/json',
+    'User-Agent': 'PluginSync-Enmity',
+});
+
+const gistSave = (token: string, gistId: string, data: string): Promise<string> => {
+    if (gistId) {
+        return fetch(`https://api.github.com/gists/${gistId}`, {
+            method: 'PATCH',
+            headers: gistHeaders(token),
+            body: JSON.stringify({ files: { [GIST_FILENAME]: { content: data } } }),
+        }).then((r: any) => r.json()).then((r: any) => r.id ?? gistId);
+    }
+    return fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: gistHeaders(token),
+        body: JSON.stringify({
+            description: 'PluginSync Enmity Backup',
+            public: false,
+            files: { [GIST_FILENAME]: { content: data } },
+        }),
+    }).then((r: any) => r.json()).then((r: any) => r.id ?? '');
 };
+
+const gistLoad = (token: string, gistId: string): Promise<string> =>
+    fetch(`https://api.github.com/gists/${gistId}`, { headers: gistHeaders(token) })
+        .then((r: any) => r.json())
+        .then((r: any) => r.files?.[GIST_FILENAME]?.content ?? '');
 
 const PluginSync: Plugin = {
     ...manifest,
-
-    onStart() {
-        // Yöntem 1: Alert.prompt — Enmity "Plugin URL gir" dialogunu yakala
-        const AlertModule = getByProps('prompt', 'alert') ?? getByProps('alert', 'dismiss');
-        if (AlertModule?.prompt) {
-            Patcher.before(AlertModule, 'prompt', (_self: any, args: any[]) => {
-                const origCallback = args[2];
-                args[2] = (inputUrl: string) => {
-                    if (typeof inputUrl === 'string' && inputUrl.startsWith('http')) {
-                        // 3 saniye sonra kontrol et — plugin kurulmuş olur
-                        setTimeout(() => {
-                            const name = inputUrl.split('/').pop()?.replace(/\.js$/i, '') ?? '';
-                            if (name) {
-                                const stored = getUrls();
-                                stored[name] = inputUrl;
-                                setUrls(stored);
-                            }
-                        }, 3000);
-                    }
-                    if (typeof origCallback === 'function') origCallback(inputUrl);
-                };
-            });
-        }
-
-        // Yöntem 2: RCTNetworking — React Native'in network modülü
-        const Networking = getByProps('sendRequest', 'abortRequest');
-        if (Networking?.sendRequest) {
-            Patcher.before(Networking, 'sendRequest', (_self: any, args: any[]) => {
-                try {
-                    const query = args[0];
-                    const urlStr: string = query?.url ?? '';
-                    if (urlStr.startsWith('http') && urlStr.endsWith('.js')) {
-                        // Kaydı gecikmeli yap — response başarılıysa plugin adı eklenecek
-                        const name = urlStr.split('/').pop()?.replace(/\.js$/i, '') ?? '';
-                        if (name) {
-                            setTimeout(() => {
-                                const plugins = getPlugins() ?? [];
-                                const found = plugins.find((p: any) => p.name === name);
-                                if (found) {
-                                    const stored = getUrls();
-                                    if (!stored[name]) { stored[name] = urlStr; setUrls(stored); }
-                                }
-                            }, 5000);
-                        }
-                    }
-                } catch {}
-            });
-        }
-    },
-
+    onStart() {},
     onStop() { Patcher.unpatchAll(); },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
         const Panel = () => {
+            const [token, setToken] = React.useState(s.token());
+            const [gistId, setGistId] = React.useState(s.gistId());
             const [status, setStatus] = React.useState('');
-            const [tick, setTick] = React.useState(0);
+            const [inputs, setInputs] = React.useState<Record<string, string>>({});
+            const [busy, setBusy] = React.useState(false);
 
             const plugins = getPlugins() ?? [];
-            const urls = getUrls();
-            const getUrl = (p: any): string => p?.url ?? urls[p?.name] ?? '';
-            const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
+            const urls = s.urls();
 
-            const handleSave = () => {
-                const data = JSON.stringify({
-                    version: 1,
-                    savedAt: new Date().toISOString(),
-                    plugins: plugins.map((p: any) => ({
-                        name: p.name,
-                        version: p.version,
-                        url: getUrl(p),
-                    })),
-                }, null, 2);
+            const getUrl = (p: any): string => p?.url ?? p?.manifest?.url ?? urls[p?.name] ?? '';
+            const missing = plugins.filter((p: any) => !getUrl(p));
 
-                const Share = getByProps('share', 'sharedAction');
-                if (Share?.share) {
-                    Share.share({ message: data, title: 'PluginSync.json' })
-                        .then(() => setStatus(`✓ ${plugins.length} plugin kaydedildi`))
-                        .catch(() => { Clipboard.setString(data); Toasts.open({ content: 'Panoya kopyalandı!' }); });
-                } else {
-                    Clipboard.setString(data);
-                    Toasts.open({ content: 'Panoya kopyalandı!' });
-                }
+            const handleSaveUrls = () => {
+                const u = s.urls();
+                let saved = 0;
+                Object.entries(inputs).forEach(([name, url]) => {
+                    if (url.trim().startsWith('http')) { u[name] = url.trim(); saved++; }
+                });
+                s.setUrls(u);
+                setInputs({});
+                setStatus(`✓ ${saved} URL kaydedildi`);
+                Toasts.open({ content: `${saved} URL kaydedildi!` });
+            };
+
+            const buildData = () => JSON.stringify({
+                version: 1,
+                savedAt: new Date().toISOString(),
+                plugins: plugins.map((p: any) => ({
+                    name: p.name,
+                    version: p.version,
+                    url: getUrl(p),
+                })),
+            }, null, 2);
+
+            const handleSaveSettings = () => {
+                set(ID, 'ghToken', token.trim());
+                set(ID, 'gistId', gistId.trim());
+                Toasts.open({ content: 'Ayarlar kaydedildi!' });
+            };
+
+            const handleCloudSave = () => {
+                const t = token.trim();
+                if (!t) { Toasts.open({ content: 'Önce GitHub token gir!' }); return; }
+                setBusy(true);
+                gistSave(t, gistId.trim(), buildData())
+                    .then((id: string) => {
+                        if (id) { set(ID, 'gistId', id); setGistId(id); }
+                        setStatus(`✓ Cloud'a kaydedildi · Gist: ${id}`);
+                        Toasts.open({ content: 'Cloud\\'a kaydedildi!' });
+                        setBusy(false);
+                    })
+                    .catch(() => { Toasts.open({ content: 'Gist kaydetme hatası!' }); setBusy(false); });
             };
 
             const doImport = (text: string) => {
@@ -108,7 +114,7 @@ const PluginSync: Plugin = {
                     const data = JSON.parse(text);
                     if (!Array.isArray(data?.plugins)) { Toasts.open({ content: 'Geçersiz format!' }); return; }
                     const ep = (window as any).enmity?.plugins;
-                    const newUrls = getUrls();
+                    const newUrls = s.urls();
                     let queued = 0, skipped = 0;
                     data.plugins.forEach((p: any) => {
                         const url: string = typeof p === 'string' ? p : p?.url;
@@ -118,13 +124,39 @@ const PluginSync: Plugin = {
                         if (name) newUrls[name] = url;
                         try { ep?.installPlugin?.(url, () => {}); } catch {}
                     });
-                    setUrls(newUrls);
+                    s.setUrls(newUrls);
                     setStatus(`${queued} plugin yükleniyor${skipped > 0 ? ` · ${skipped} atlandı` : ''}`);
                     Toasts.open({ content: `${queued} plugin yükleniyor...` });
                 } catch { Toasts.open({ content: 'JSON okunamadı!' }); }
             };
 
-            const handleLoad = () => {
+            const handleCloudLoad = () => {
+                const t = token.trim();
+                const g = gistId.trim();
+                if (!t || !g) { Toasts.open({ content: 'Token ve Gist ID gerekli!' }); return; }
+                setBusy(true);
+                gistLoad(t, g)
+                    .then((content: string) => {
+                        doImport(content);
+                        setBusy(false);
+                    })
+                    .catch(() => { Toasts.open({ content: 'Gist yüklenemedi!' }); setBusy(false); });
+            };
+
+            const handleLocalSave = () => {
+                const data = buildData();
+                const Share = getByProps('share', 'sharedAction');
+                if (Share?.share) {
+                    Share.share({ message: data, title: 'PluginSync.json' })
+                        .then(() => setStatus(`✓ ${plugins.length} plugin dosyaya kaydedildi`))
+                        .catch(() => { Clipboard.setString(data); Toasts.open({ content: 'Panoya kopyalandı!' }); });
+                } else {
+                    Clipboard.setString(data);
+                    Toasts.open({ content: 'Panoya kopyalandı!' });
+                }
+            };
+
+            const handleLocalLoad = () => {
                 const DocPicker = getByProps('pickSingle', 'pick') ?? getByProps('pick', 'pickDirectory');
                 const pickFn = DocPicker?.pickSingle
                     ?? (DocPicker?.pick ? (...a: any[]) => DocPicker.pick(...a).then((r: any[]) => r[0]) : null);
@@ -139,39 +171,87 @@ const PluginSync: Plugin = {
                 }
             };
 
-            const handleRefresh = () => {
-                setTick(t => t + 1);
-                setStatus('Yenilendi');
-            };
+            const withUrl = plugins.filter((p: any) => !!getUrl(p)).length;
 
             return React.createElement(React.Fragment, null,
                 React.createElement(FormSection, { title: 'PLUGİN SYNC' },
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
-                        subLabel: status || (withUrl < plugins.length
-                            ? `${plugins.length - withUrl} plugin URL'si yok — o plugini kaldırıp tekrar yükle`
-                            : '✓ Tüm URL\'ler kayıtlı'),
-                        onPress: handleRefresh,
+                        subLabel: status || (missing.length > 0
+                            ? `${missing.length} plugin için URL gir (bir kez)`
+                            : '✓ Hazır — yedekleyebilirsin'),
                     })
                 ),
-                React.createElement(FormSection, { title: 'YEDEK AL / GERİ YÜKLE' },
+                missing.length > 0 ? React.createElement(FormSection, { title: "URL'LERİ GİR (BİR KEZ)" },
+                    ...missing.map((p: any) =>
+                        React.createElement(View, {
+                            key: p.name,
+                            style: { paddingHorizontal: 16, paddingVertical: 4 },
+                        },
+                            React.createElement(TextInput, {
+                                value: inputs[p.name] ?? '',
+                                onChangeText: (v: string) =>
+                                    setInputs((prev: any) => ({ ...prev, [p.name]: v })),
+                                placeholder: `${p.name} yükleme URL'si`,
+                                placeholderTextColor: '#72767d',
+                                style: {
+                                    color: '#fff',
+                                    backgroundColor: '#2f3136',
+                                    borderRadius: 8,
+                                    padding: 10,
+                                    fontSize: 13,
+                                },
+                                autoCapitalize: 'none',
+                                autoCorrect: false,
+                            })
+                        )
+                    ),
+                    React.createElement(FormRow, {
+                        label: 'Kaydet',
+                        subLabel: "URL'leri kalıcı olarak kaydet",
+                        onPress: handleSaveUrls,
+                    })
+                ) : null,
+                React.createElement(FormSection, { title: 'CLOUD SYNC (GitHub Gist)' },
+                    React.createElement(View, { style: { paddingHorizontal: 16, paddingTop: 8 } },
+                        React.createElement(TextInput, {
+                            value: token,
+                            onChangeText: setToken,
+                            placeholder: 'GitHub Personal Access Token (gist izni)',
+                            placeholderTextColor: '#72767d',
+                            secureTextEntry: true,
+                            style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 6 },
+                            autoCapitalize: 'none', autoCorrect: false,
+                        }),
+                        React.createElement(TextInput, {
+                            value: gistId,
+                            onChangeText: setGistId,
+                            placeholder: 'Gist ID (ilk kayıtta otomatik oluşturulur)',
+                            placeholderTextColor: '#72767d',
+                            style: { color: '#fff', backgroundColor: '#2f3136', borderRadius: 8, padding: 10, fontSize: 13, marginBottom: 4 },
+                            autoCapitalize: 'none', autoCorrect: false,
+                        })
+                    ),
+                    React.createElement(FormRow, { label: 'Token ve ID\\'yi Kaydet', onPress: handleSaveSettings }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : '☁ Cloud\\'a Yedekle', onPress: busy ? undefined : handleCloudSave }),
+                    React.createElement(FormRow, { label: busy ? 'İşleniyor...' : '☁ Cloud\\'dan Geri Yükle', onPress: busy ? undefined : handleCloudLoad })
+                ),
+                React.createElement(FormSection, { title: 'YEREL YEDEK (Dosya)' },
                     React.createElement(FormRow, {
                         label: '📤 Dosyaya Kaydet',
-                        subLabel: '"Dosyalara Kaydet" → PluginSync.json olarak sakla',
-                        onPress: handleSave,
+                        onPress: handleLocalSave,
                     }),
                     React.createElement(FormRow, {
                         label: '📥 Dosyadan Yükle',
-                        subLabel: 'Kaydettiğin JSON dosyasını seç → pluginler yüklenir',
-                        onPress: handleLoad,
+                        onPress: handleLocalLoad,
                     })
                 ),
                 React.createElement(FormSection, { title: `YÜKLÜ PLUGİNLER (${plugins.length})` },
                     ...plugins.map((p: any) =>
                         React.createElement(FormRow, {
-                            key: `${p.name}-${tick}`,
+                            key: p.name,
                             label: p.name,
-                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ Kaldırıp tekrar yükle'}`,
+                            subLabel: `v${p.version} · ${getUrl(p) ? '✓ URL kayıtlı' : '✗ URL eksik'}`,
                         })
                     )
                 )
