@@ -73,14 +73,15 @@ const PluginSync: Plugin = {
                 const ep = (window as any).enmity?.plugins;
                 const name = url.split('/').pop()?.replace(/\.js$/i, '') ?? '';
                 ep?.installPlugin?.(url, (res: any) => {
-                    if (res?.kind === 'success' || res === true) {
+                    // Discord/Enmity success durumunda undefined döndürebilir
+                    if (res !== false && res !== 'error' && res?.kind !== 'error') {
                         if (name) {
                             const u = s.urls();
                             u[name] = url;
                             s.setUrls(u);
                         }
                         setInstallUrl('');
-                        setStatus(`✓ ${name} kuruldu ve URL kaydedildi`);
+                        setStatus(`${name} kuruldu`);
                         Toasts.open({ content: `${name || 'Plugin'} kuruldu ve kaydedildi!` });
                     } else {
                         Toasts.open({ content: 'Kurulum başarısız!' });
