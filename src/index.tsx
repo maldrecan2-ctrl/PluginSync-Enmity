@@ -50,7 +50,22 @@ const gistLoad = (token: string, gistId: string): Promise<string> =>
 
 const PluginSync: Plugin = {
     ...manifest,
-    onStart() {},
+    onStart() {
+        const ep = (window as any).enmity?.plugins;
+        if (ep?.installPlugin) {
+            Patcher.before(ep, 'installPlugin', (_self: any, args: any[]) => {
+                const url = args[0];
+                if (typeof url === 'string' && url.startsWith('http')) {
+                    const name = url.split('/').pop()?.replace(/\.js$/i, '') ?? '';
+                    if (name) {
+                        const u = s.urls();
+                        u[name] = url;
+                        s.setUrls(u);
+                    }
+                }
+            });
+        }
+    },
     onStop() { Patcher.unpatchAll(); },
 
     getSettingsPanel({ settings: _ }: { settings: any }) {
@@ -58,26 +73,12 @@ const PluginSync: Plugin = {
             const [token, setToken] = React.useState(s.token());
             const [gistId, setGistId] = React.useState(s.gistId());
             const [status, setStatus] = React.useState('');
-            const [inputs, setInputs] = React.useState<Record<string, string>>({});
             const [busy, setBusy] = React.useState(false);
 
             const plugins = getPlugins() ?? [];
             const urls = s.urls();
 
             const getUrl = (p: any): string => p?.url ?? p?.manifest?.url ?? urls[p?.name] ?? '';
-            const missing = plugins.filter((p: any) => !getUrl(p));
-
-            const handleSaveUrls = () => {
-                const u = s.urls();
-                let saved = 0;
-                Object.entries(inputs).forEach(([name, url]) => {
-                    if (url.trim().startsWith('http')) { u[name] = url.trim(); saved++; }
-                });
-                s.setUrls(u);
-                setInputs({});
-                setStatus(`✓ ${saved} URL kaydedildi`);
-                Toasts.open({ content: `${saved} URL kaydedildi!` });
-            };
 
             const buildData = () => JSON.stringify({
                 version: 1,
@@ -177,41 +178,9 @@ const PluginSync: Plugin = {
                 React.createElement(FormSection, { title: 'PLUGİN SYNC' },
                     React.createElement(FormRow, {
                         label: `${plugins.length} Plugin · ${withUrl}/${plugins.length} URL Kayıtlı`,
-                        subLabel: status || (missing.length > 0
-                            ? `${missing.length} plugin için URL gir (bir kez)`
-                            : '✓ Hazır — yedekleyebilirsin'),
+                        subLabel: status || '✓ Pluginleri yedekleyebilirsin',
                     })
                 ),
-                missing.length > 0 ? React.createElement(FormSection, { title: "URL'LERİ GİR (BİR KEZ)" },
-                    ...missing.map((p: any) =>
-                        React.createElement(View, {
-                            key: p.name,
-                            style: { paddingHorizontal: 16, paddingVertical: 4 },
-                        },
-                            React.createElement(TextInput, {
-                                value: inputs[p.name] ?? '',
-                                onChangeText: (v: string) =>
-                                    setInputs((prev: any) => ({ ...prev, [p.name]: v })),
-                                placeholder: `${p.name} yükleme URL'si`,
-                                placeholderTextColor: '#72767d',
-                                style: {
-                                    color: '#fff',
-                                    backgroundColor: '#2f3136',
-                                    borderRadius: 8,
-                                    padding: 10,
-                                    fontSize: 13,
-                                },
-                                autoCapitalize: 'none',
-                                autoCorrect: false,
-                            })
-                        )
-                    ),
-                    React.createElement(FormRow, {
-                        label: 'Kaydet',
-                        subLabel: "URL'leri kalıcı olarak kaydet",
-                        onPress: handleSaveUrls,
-                    })
-                ) : null,
                 React.createElement(FormSection, { title: 'CLOUD SYNC (GitHub Gist)' },
                     React.createElement(View, { style: { paddingHorizontal: 16, paddingTop: 8 } },
                         React.createElement(TextInput, {
